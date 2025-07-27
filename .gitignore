@@ -1,207 +1,259 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
+import hashlib
+import json
+import time
+from urllib.parse import urlparse
+import requests
 
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
-
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
-
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-#poetry.toml
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
-#pdm.lock
-#pdm.toml
-.pdm-python
-.pdm-build/
-
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-#pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
-
-# Abstra
-# Abstra is an AI-powered process automation framework.
-# Ignore directories containing user credentials, local state, and settings.
-# Learn more at https://abstra.io/docs
-.abstra/
-
-# Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
-
-# Ruff stuff:
-.ruff_cache/
-
-# PyPI configuration file
-.pypirc
-
-# Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
-.cursorignore
-.cursorindexingignore
-
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+class Blockchain:
+    def __init__(self):
+        self.chain = []
+        self.current_transactions = []
+        self.nodes = set()
+        
+        # Create the genesis block
+        self.new_block(previous_hash='1', proof=100)
+    
+    def register_node(self, address):
+        """
+        Add a new node to the list of nodes
+        
+        :param address: Address of node. Eg. 'http://192.168.0.5:5000'
+        """
+        parsed_url = urlparse(address)
+        self.nodes.add(parsed_url.netloc)
+    
+    def valid_chain(self, chain):
+        """
+        Determine if a given blockchain is valid
+        
+        :param chain: A blockchain
+        :return: True if valid, False if not
+        """
+        last_block = chain[0]
+        current_index = 1
+        
+        while current_index < len(chain):
+            block = chain[current_index]
+            # Check that the hash of the block is correct
+            if block['previous_hash'] != self.hash(last_block):
+                return False
+            
+            # Check that the Proof of Work is correct
+            if not self.valid_proof(last_block['proof'], block['proof'], block['previous_hash']):
+                return False
+            
+            last_block = block
+            current_index += 1
+        
+        return True
+    
+    def resolve_conflicts(self):
+        """
+        This is our consensus algorithm, it resolves conflicts
+        by replacing our chain with the longest one in the network.
+        
+        :return: True if our chain was replaced, False if not
+        """
+        neighbours = self.nodes
+        new_chain = None
+        
+        # We're only looking for chains longer than ours
+        max_length = len(self.chain)
+        
+        # Grab and verify the chains from all the nodes in our network
+        for node in neighbours:
+            response = requests.get(f'http://{node}/chain')
+            
+            if response.status_code == 200:
+                length = response.json()['length']
+                chain = response.json()['chain']
+                
+                # Check if the length is longer and the chain is valid
+                if length > max_length and self.valid_chain(chain):
+                    max_length = length
+                    new_chain = chain
+        
+        # Replace our chain if we discovered a new, valid chain longer than ours
+        if new_chain:
+            self.chain = new_chain
+            return True
+        
+        return False
+    
+    def new_block(self, proof, previous_hash=None):
+        """
+        Create a new Block in the Blockchain
+        
+        :param proof: The proof given by the Proof of Work algorithm
+        :param previous_hash: Hash of previous Block
+        :return: New Block
+        """
+        block = {
+            'index': len(self.chain) + 1,
+            'timestamp': time.time(),
+            'transactions': self.current_transactions,
+            'proof': proof,
+            'previous_hash': previous_hash or self.hash(self.chain[-1]) if self.chain else None,
+        }
+        
+        # Reset the current list of transactions
+        self.current_transactions = []
+        
+        self.chain.append(block)
+        return block
+    
+    def new_transaction(self, sender, recipient, amount, data=None):
+        """
+        Creates a new transaction to go into the next mined Block
+        
+        :param sender: Address of the Sender
+        :param recipient: Address of the Recipient
+        :param amount: Amount
+        :param data: Additional data for the transaction
+        :return: The index of the Block that will hold this transaction
+        """
+        transaction = {
+            'sender': sender,
+            'recipient': recipient,
+            'amount': amount,
+            'timestamp': time.time(),
+            'data': data or {}
+        }
+        
+        self.current_transactions.append(transaction)
+        
+        return self.last_block['index'] + 1
+    
+    def get_transaction_history(self, entity_id):
+        """
+        Get all transactions related to a specific entity (sender or recipient)
+        
+        :param entity_id: ID of the entity to search for
+        :return: List of transactions
+        """
+        transactions = []
+        
+        # Search through all blocks for transactions involving the entity
+        for block in self.chain:
+            for transaction in block['transactions']:
+                if transaction['sender'] == entity_id or transaction['recipient'] == entity_id:
+                    # Add block information to the transaction
+                    tx_with_block = transaction.copy()
+                    tx_with_block['block_index'] = block['index']
+                    tx_with_block['block_timestamp'] = block['timestamp']
+                    transactions.append(tx_with_block)
+        
+        return sorted(transactions, key=lambda x: x['timestamp'])
+    
+    @property
+    def last_block(self):
+        """
+        Returns the last Block in the chain
+        """
+        return self.chain[-1] if self.chain else None
+    
+    @staticmethod
+    def hash(block):
+        """
+        Creates a SHA-256 hash of a Block
+        
+        :param block: Block
+        """
+        # We must make sure that the Dictionary is Ordered, or we'll have inconsistent hashes
+        block_string = json.dumps(block, sort_keys=True).encode()
+        return hashlib.sha256(block_string).hexdigest()
+    
+    def proof_of_work(self, last_proof):
+        """
+        Simple Proof of Work Algorithm:
+        - Find a number p' such that hash(pp') contains 4 leading zeroes, where p is the previous p'
+        - p is the previous proof, and p' is the new proof
+        
+        :param last_proof: <int>
+        :return: <int>
+        """
+        proof = 0
+        while self.valid_proof(last_proof, proof) is False:
+            proof += 1
+        
+        return proof
+    
+    @staticmethod
+    def valid_proof(last_proof, proof, last_hash=None):
+        """
+        Validates the Proof
+        
+        :param last_proof: Previous Proof
+        :param proof: Current Proof
+        :param last_hash: The hash of the Previous Block
+        :return: <bool> True if correct, False if not.
+        """
+        guess = f'{last_proof}{proof}{last_hash or ""}'.encode()
+        guess_hash = hashlib.sha256(guess).hexdigest()
+        return guess_hash[:4] == "0000"
+    
+    def mine_block(self):
+        """
+        Mine a new block with pending transactions
+        
+        :return: The new block
+        """
+        # We run the proof of work algorithm to get the next proof...
+        last_block = self.last_block
+        last_proof = last_block['proof']
+        proof = self.proof_of_work(last_proof)
+        
+        # We must receive a reward for finding the proof.
+        # The sender is "0" to signify that this node has mined a new coin.
+        self.new_transaction(
+            sender="0",
+            recipient="node",
+            amount=1,
+            data={"message": "Mining reward"}
+        )
+        
+        # Forge the new Block by adding it to the chain
+        previous_hash = self.hash(last_block)
+        block = self.new_block(proof, previous_hash)
+        
+        return block
+    
+    def to_dict(self):
+        """
+        Convert the blockchain to a dictionary for serialization
+        """
+        return {
+            'chain': self.chain,
+            'current_transactions': self.current_transactions,
+            'nodes': list(self.nodes)
+        }
+    
+    @classmethod
+    def from_dict(cls, data):
+        """
+        Create a blockchain instance from a dictionary
+        """
+        blockchain = cls()
+        blockchain.chain = data['chain']
+        blockchain.current_transactions = data['current_transactions']
+        blockchain.nodes = set(data['nodes'])
+        return blockchain
+    
+    def save_to_file(self, filename='blockchain.json'):
+        """
+        Save the blockchain to a file
+        """
+        with open(filename, 'w') as f:
+            json.dump(self.to_dict(), f, indent=4)
+    
+    @classmethod
+    def load_from_file(cls, filename='blockchain.json'):
+        """
+        Load the blockchain from a file
+        """
+        try:
+            with open(filename, 'r') as f:
+                data = json.load(f)
+            return cls.from_dict(data)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return cls()
