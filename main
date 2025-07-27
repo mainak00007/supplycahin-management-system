@@ -1,0 +1,259 @@
+import hashlib
+import json
+import time
+from urllib.parse import urlparse
+import requests
+
+class Blockchain:
+    def __init__(self):
+        self.chain = []
+        self.current_transactions = []
+        self.nodes = set()
+        
+        # Create the genesis block
+        self.new_block(previous_hash='1', proof=100)
+    
+    def register_node(self, address):
+        """
+        Add a new node to the list of nodes
+        
+        :param address: Address of node. Eg. 'http://192.168.0.5:5000'
+        """
+        parsed_url = urlparse(address)
+        self.nodes.add(parsed_url.netloc)
+    
+    def valid_chain(self, chain):
+        """
+        Determine if a given blockchain is valid
+        
+        :param chain: A blockchain
+        :return: True if valid, False if not
+        """
+        last_block = chain[0]
+        current_index = 1
+        
+        while current_index < len(chain):
+            block = chain[current_index]
+            # Check that the hash of the block is correct
+            if block['previous_hash'] != self.hash(last_block):
+                return False
+            
+            # Check that the Proof of Work is correct
+            if not self.valid_proof(last_block['proof'], block['proof'], block['previous_hash']):
+                return False
+            
+            last_block = block
+            current_index += 1
+        
+        return True
+    
+    def resolve_conflicts(self):
+        """
+        This is our consensus algorithm, it resolves conflicts
+        by replacing our chain with the longest one in the network.
+        
+        :return: True if our chain was replaced, False if not
+        """
+        neighbours = self.nodes
+        new_chain = None
+        
+        # We're only looking for chains longer than ours
+        max_length = len(self.chain)
+        
+        # Grab and verify the chains from all the nodes in our network
+        for node in neighbours:
+            response = requests.get(f'http://{node}/chain')
+            
+            if response.status_code == 200:
+                length = response.json()['length']
+                chain = response.json()['chain']
+                
+                # Check if the length is longer and the chain is valid
+                if length > max_length and self.valid_chain(chain):
+                    max_length = length
+                    new_chain = chain
+        
+        # Replace our chain if we discovered a new, valid chain longer than ours
+        if new_chain:
+            self.chain = new_chain
+            return True
+        
+        return False
+    
+    def new_block(self, proof, previous_hash=None):
+        """
+        Create a new Block in the Blockchain
+        
+        :param proof: The proof given by the Proof of Work algorithm
+        :param previous_hash: Hash of previous Block
+        :return: New Block
+        """
+        block = {
+            'index': len(self.chain) + 1,
+            'timestamp': time.time(),
+            'transactions': self.current_transactions,
+            'proof': proof,
+            'previous_hash': previous_hash or self.hash(self.chain[-1]) if self.chain else None,
+        }
+        
+        # Reset the current list of transactions
+        self.current_transactions = []
+        
+        self.chain.append(block)
+        return block
+    
+    def new_transaction(self, sender, recipient, amount, data=None):
+        """
+        Creates a new transaction to go into the next mined Block
+        
+        :param sender: Address of the Sender
+        :param recipient: Address of the Recipient
+        :param amount: Amount
+        :param data: Additional data for the transaction
+        :return: The index of the Block that will hold this transaction
+        """
+        transaction = {
+            'sender': sender,
+            'recipient': recipient,
+            'amount': amount,
+            'timestamp': time.time(),
+            'data': data or {}
+        }
+        
+        self.current_transactions.append(transaction)
+        
+        return self.last_block['index'] + 1
+    
+    def get_transaction_history(self, entity_id):
+        """
+        Get all transactions related to a specific entity (sender or recipient)
+        
+        :param entity_id: ID of the entity to search for
+        :return: List of transactions
+        """
+        transactions = []
+        
+        # Search through all blocks for transactions involving the entity
+        for block in self.chain:
+            for transaction in block['transactions']:
+                if transaction['sender'] == entity_id or transaction['recipient'] == entity_id:
+                    # Add block information to the transaction
+                    tx_with_block = transaction.copy()
+                    tx_with_block['block_index'] = block['index']
+                    tx_with_block['block_timestamp'] = block['timestamp']
+                    transactions.append(tx_with_block)
+        
+        return sorted(transactions, key=lambda x: x['timestamp'])
+    
+    @property
+    def last_block(self):
+        """
+        Returns the last Block in the chain
+        """
+        return self.chain[-1] if self.chain else None
+    
+    @staticmethod
+    def hash(block):
+        """
+        Creates a SHA-256 hash of a Block
+        
+        :param block: Block
+        """
+        # We must make sure that the Dictionary is Ordered, or we'll have inconsistent hashes
+        block_string = json.dumps(block, sort_keys=True).encode()
+        return hashlib.sha256(block_string).hexdigest()
+    
+    def proof_of_work(self, last_proof):
+        """
+        Simple Proof of Work Algorithm:
+        - Find a number p' such that hash(pp') contains 4 leading zeroes, where p is the previous p'
+        - p is the previous proof, and p' is the new proof
+        
+        :param last_proof: <int>
+        :return: <int>
+        """
+        proof = 0
+        while self.valid_proof(last_proof, proof) is False:
+            proof += 1
+        
+        return proof
+    
+    @staticmethod
+    def valid_proof(last_proof, proof, last_hash=None):
+        """
+        Validates the Proof
+        
+        :param last_proof: Previous Proof
+        :param proof: Current Proof
+        :param last_hash: The hash of the Previous Block
+        :return: <bool> True if correct, False if not.
+        """
+        guess = f'{last_proof}{proof}{last_hash or ""}'.encode()
+        guess_hash = hashlib.sha256(guess).hexdigest()
+        return guess_hash[:4] == "0000"
+    
+    def mine_block(self):
+        """
+        Mine a new block with pending transactions
+        
+        :return: The new block
+        """
+        # We run the proof of work algorithm to get the next proof...
+        last_block = self.last_block
+        last_proof = last_block['proof']
+        proof = self.proof_of_work(last_proof)
+        
+        # We must receive a reward for finding the proof.
+        # The sender is "0" to signify that this node has mined a new coin.
+        self.new_transaction(
+            sender="0",
+            recipient="node",
+            amount=1,
+            data={"message": "Mining reward"}
+        )
+        
+        # Forge the new Block by adding it to the chain
+        previous_hash = self.hash(last_block)
+        block = self.new_block(proof, previous_hash)
+        
+        return block
+    
+    def to_dict(self):
+        """
+        Convert the blockchain to a dictionary for serialization
+        """
+        return {
+            'chain': self.chain,
+            'current_transactions': self.current_transactions,
+            'nodes': list(self.nodes)
+        }
+    
+    @classmethod
+    def from_dict(cls, data):
+        """
+        Create a blockchain instance from a dictionary
+        """
+        blockchain = cls()
+        blockchain.chain = data['chain']
+        blockchain.current_transactions = data['current_transactions']
+        blockchain.nodes = set(data['nodes'])
+        return blockchain
+    
+    def save_to_file(self, filename='blockchain.json'):
+        """
+        Save the blockchain to a file
+        """
+        with open(filename, 'w') as f:
+            json.dump(self.to_dict(), f, indent=4)
+    
+    @classmethod
+    def load_from_file(cls, filename='blockchain.json'):
+        """
+        Load the blockchain from a file
+        """
+        try:
+            with open(filename, 'r') as f:
+                data = json.load(f)
+            return cls.from_dict(data)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return cls()
